@@ -1,0 +1,27 @@
+################################################################################
+# igeo7.meta - example of generating a igeo7 DGG res 3.
+#
+################################################################################
+
+# specify the operation
+dggrid_operation GENERATE_GRID
+
+# specify the DGG
+dggs_type IGEO7
+dggs_res_spec 6
+
+# control the generation
+clip_subset_type SHAPEFILE
+clip_region_files ./inputfiles/EasternCanadianShieldTaigaIFL.shp
+
+# specify the output
+# igeo7 DGGS preset has Z7 INT64 for input and output
+# and sets output_cell_label_type to OUTPUT_ADDRESS_TYPE
+cell_output_type SHAPEFILE
+cell_output_file_name outputfiles/IGEO7_6RESv3
+#point_output_type SHAPEFILE
+#point_output_file_name outputfiles/igeo7pts
+densification 10
+#precision 6
+shapefile_id_field_length 25
+

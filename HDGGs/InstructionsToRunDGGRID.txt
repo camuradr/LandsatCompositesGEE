@@ -1,0 +1,10 @@
+The working dggrid tool is installed inside a specific Anaconda environment.
+
+1. Open Anaconda Navigator
+2. Load/change to dggrid_env
+3. Launch anaconda_prompt
+4. Navigate to metafile location	
+5. Run the command: dggrid file.meta
+
+For any updated or more recent versions check:
+https://anaconda.org/channels/conda-forge/packages/dggrid/overview

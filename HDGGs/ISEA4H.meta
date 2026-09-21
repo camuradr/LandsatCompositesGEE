@@ -1,0 +1,23 @@
+################################################################################
+#
+# isea4h.meta - DGGRID metafile that generates a resolution 
+#     7 ISEA4H hexagon grid for the Quebec Shield Taiga IFL
+#
+################################################################################
+
+# specify the operation
+dggrid_operation GENERATE_GRID
+
+# specify an ISEA4T DGG; override the default resolution
+dggs_type ISEA4H
+dggs_res_spec 8
+
+# control grid generation
+clip_subset_type SHAPEFILE
+clip_region_files ./inputfiles/EasternCanadianShieldTaigaIFL.shp
+
+# specify the output
+cell_output_type SHAPEFILE
+cell_output_file_name ./outputfiles/ISEA4H_8RES
+densification 10
+shapefile_id_field_length 25
