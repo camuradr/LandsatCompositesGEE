@@ -5,19 +5,34 @@ It allows to generate Landsat composites over large extents of forest ecosystems
 enhancing spatial consistency and preserving ecologically meaningful temporal  dynamics to enable reproducible, robust and 
 comparable assessments of forest resilience across biomes.
 
+![](https://github.com/camuradr/LandsatCompositesGEE/blob/main/Data/Figures/GraphicalAbstract.svg)
+
+##
+
 ## Landsat composite generator in GEE (Google Earth Egine)
 
-The available code in GEE for generating high-quality, cross-calibrated Landsat composites.
-It allows for ... that cover large extents of terrestrial biomes
+The GEE workflow integrates robust processing and a consistent sensor cross-calibration to improve the reliability of the Landsat imagery used for resilience analysis. 
+
+![General criteria to address practical and multispectral limitations](https://raw.githubusercontent.com/camuradr/LandsatCompositesGEE/refs/heads/main/Data/Figures/GEEworkflow_v2.svg?token=GHSAT0AAAAAAEJLF7OXNT4TBIYBLU6T5C4I2WDT5XQ)
+
+##
+
+The link below corresponds to the scrip available in GEE for generating high-quality, cross-calibrated Landsat composites.It can also be found
+in the Scripts folder as a .js file. It allows for the exploration and generation of Landsat composites that cover large extents of terrestrial biomes. 
 
 https://code.earthengine.google.com/c22d0250e5741dfe7f1351351f52aa12
 
-![General criteria to address practical and multispectral limitations](https://raw.githubusercontent.com/camuradr/LandsatCompositesGEE/refs/heads/main/Data/Figures/GEEworkflow_v2.svg?token=GHSAT0AAAAAAEJLF7OX5W5Y6QOOKYMWC5YU2WDR55Q)
+Input paramaters can be modified according to the preferences, which include the criteria outlined in the framework. 
 
 ## Computing STEWS (RStudio)
 
-Code to manage the raster outputs from GEE exports to generate the composite dataset.
-It includes the code for computing several vegetation indices when surface reflectance bands are exported.
+The rasters exported from GEE can be processed with RStudio to compute early warning signals using available packages.
+Several vegetation indices can be derived from the exported surface reflectance bands inside R, which is done within the script.
 It also allows for the computation of the spatial early warning signals (SEWS) through a parallel processing plan.
 
-![Multiscale grid approach to tackle the scale limitations ](https://raw.githubusercontent.com/camuradr/LandsatCompositesGEE/refs/heads/main/Data/Figures/HDGGworkflow_v2.svg?token=GHSAT0AAAAAAEJLF7OXLQH65WLX4BXCXXMQ2WDR7OA)
+![Multiscale grid approach to tackle the scale limitations ](https://raw.githubusercontent.com/camuradr/LandsatCompositesGEE/refs/heads/main/Data/Figures/HDGGworkflow_v2.svg?token=GHSAT0AAAAAAEJLF7OXQHDLEVHSO6W5PSVM2WDT6LA)
+
+##
+
+The code to manage the raster outputs from GEE exports to generate the composite dataset is available inside the Scripts folder.
+The instructions, along with examples, for generating the hexagonal discrete global grids are inside the HDGGs folder.
