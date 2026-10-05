@@ -13,7 +13,7 @@ comparable assessments of forest resilience across biomes.
 
 The GEE workflow integrates robust processing and a consistent sensor cross-calibration to improve the reliability of the Landsat imagery used for resilience analysis. 
 
-![General criteria to address practical and multispectral limitations](https://raw.githubusercontent.com/camuradr/LandsatCompositesGEE/refs/heads/main/Data/Figures/GEEworkflow_v2.svg?token=GHSAT0AAAAAAEJLF7OXNT4TBIYBLU6T5C4I2WDT5XQ)
+![General criteria to address practical and multispectral limitations](https://github.com/camuradr/LandsatCompositesGEE/blob/main/Data/Figures/GEEworkflow.svg)
 
 ##
 
@@ -30,7 +30,7 @@ The rasters exported from GEE can be processed with RStudio to compute early war
 Several vegetation indices can be derived from the exported surface reflectance bands inside R, which is done within the script.
 It also allows for the computation of the spatial early warning signals (SEWS) through a parallel processing plan.
 
-![Multiscale grid approach to tackle the scale limitations ](https://raw.githubusercontent.com/camuradr/LandsatCompositesGEE/refs/heads/main/Data/Figures/HDGGworkflow_v2.svg?token=GHSAT0AAAAAAEJLF7OXQHDLEVHSO6W5PSVM2WDT6LA)
+![Multiscale grid approach to tackle the scale limitations ](https://github.com/camuradr/LandsatCompositesGEE/blob/main/Data/Figures/HDGGworkflow.png)
 
 ##
 
