@@ -1,0 +1,446 @@
+---
+title: "SEWS_HexGrid"
+author: "Cesar A. Murad R."
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+# Load required libraries
+
+library(terra)
+library(raster)
+library(sf)
+library(dplyr)
+library(stringr)
+library(rgee)
+library(ggplot2)
+library(future.apply)
+library(tools)
+library(spatialwarningsGis)
+library(spatialwarnings)
+library(future)
+
+```
+
+### Landsat Composite Merger
+
+This script merges raster from GEE exports to generate one composite per time period.
+
+```{r}
+
+# Location of exported GEE composites
+rasters_folder <- "D:/Documents/QuebecTaigaStudy/Composites/SensitivityRobustness/CompositesVS" 
+##setwd(composites_folder)
+
+year_folders <- list.dirs(rasters_folder, recursive = FALSE) # Get list of year subfolders (non-recursive)
+
+## Double Check if TIF files inside folders match the year folder
+
+files <- list.files(rasters_folder, pattern = "\\.tif$", full.names = TRUE, recursive = TRUE)
+
+files_df <- data.frame(file = basename(files), folder_year = str_extract(basename(dirname(files)), "\\d{4}"),  file_year = str_extract(basename(files), "\\d{4}"), full_path = files) %>%
+  mutate(match = folder_year == file_year)
+
+
+mismatches <- files_df %>% dplyr::filter(!match)
+
+if (nrow(mismatches) == 0) {
+  message("✅ All files match their folder year.")
+} else {
+  message("⚠️ Some files do not match their folder year:")
+  print(mismatches[, c("folder_year", "file_year", "file")])
+}
+```
+
+Loop through each folder to merge all TIF files within the time period (same folder) into a single composite.
+
+```{r}
+
+for (yr_folder in year_folders) {
+  
+  t0    <- Sys.time()
+  yr    <- basename(yr_folder)
+  files <- list.files(yr_folder, pattern = "\\.tif$", full.names = TRUE)
+
+  # Build the virtual mosaic
+  vrt_file <- file.path(tempdir(), paste0("Composite_", yr, ".vrt"))
+  v <- vrt(files, filename = vrt_file, overwrite = TRUE)
+
+  # Materialize to a real GeoTIFF
+  out_file <- file.path(rasters_folder, paste0("Composite_", yr, "_merged.tif"))
+  writeRaster(v, out_file, overwrite = TRUE,
+              gdal = c("TILED=YES", "BIGTIFF=IF_SAFER"))
+  terra::tmpFiles(current = TRUE, remove = TRUE) # remove temp files
+
+  message("Composite ", yr, ": ", length(files), " tiles, ",
+          round(as.numeric(difftime(Sys.time(), t0, units = "secs")), 2), " secs")
+}
+```
+
+Build raster stack from generated mosaics
+
+```{r}
+
+merged_path <- "D:/Documents/QuebecTaigaStudy/Composites/LandsatComposites/FullBandsCompositesClean"
+merged_files <- list.files(merged_path, pattern = "_merged\\.tif$", full.names = TRUE)
+
+# Sort files by year if needed
+# merged_files <- merged_files[order(merged_files)]
+
+# Load into one multi-layer SpatRaster
+merged_stack <- rast(merged_files)
+
+```
+
+### Calculate Vegetation Indices (VIs)
+
+```{r}
+
+# FUNCTION: compute supported indices from a named list of SpatRaster bands
+compute_indices_from_bands <- function(bands, indices) {
+  # bands: named list with elements blue, green, red, nir, swir1, swir2 as SpatRast layers (or NULL if missing)
+  
+  clean_band <- function(b) if (!is.null(b)) { b[b < 0] <- NA; return(b) } else NULL
+  bands <- lapply(bands, clean_band)
+  
+  # convenience short-names
+  b <- bands$blue;
+  g <- bands$green;
+  r <- bands$red;
+  n <- bands$nir;
+  s1 <- bands$swir1;
+  s2 <- bands$swir2
+  
+  # indices: character vector of indices to compute
+  out_layers <- list()
+  
+  for (idx in indices) {
+    idx_upper <- toupper(idx)
+    if (idx_upper == "NDVI") {
+      # (NIR - RED) / (NIR + RED)
+      if (is.null(n) || is.null(r)) stop("NDVI requires 'nir' and 'red' bands.")
+      out_layers[["NDVI"]] <- (n - r) / (n + r)
+    } else if (idx_upper == "EVI") {
+      # 2.5 * (NIR - RED) / (NIR + 6*RED - 7.5*BLUE + 1)
+      if (is.null(n) || is.null(r) || is.null(b)) stop("EVI requires 'nir', 'red', and 'blue' bands.")
+      out_layers[["EVI"]] <- 2.5 * (n - r) / (n + 6 * r - 7.5 * b + 1 )
+    } else if (idx_upper == "NDWI") {
+      # (NIR - SWIR1) / (NIR + SWIR1)
+      if (is.null(n) || is.null(s1)) stop("NDWI requires 'nir' and 'swir1' bands.")
+      out_layers[["NDWI"]] <- (n - s1) / (n + s1)
+    } else if (idx_upper == "SAVI") {
+      # ((NIR - RED) * (1 + L)) / (NIR + RED + L) where L = 0.5
+      if (is.null(n) || is.null(r)) stop("SAVI requires 'nir' and 'red' bands.")
+      out_layers[["SAVI"]] <- ((n - r) * (1 + 0.5)) / (n + r + 0.5)
+    } else if (idx_upper == "NBR") {
+      # (NIR - SWIR2)/(NIR + SWIR2) - Normalized Burn Ratio
+      if (is.null(n) || is.null(s2)) stop("NBR requires 'nir' and 'swir2' bands.")
+      out_layers[["NBR"]] <- (n - s2) / (n + s2)
+    } else if (idx_upper == "NDMI") {
+      # (NIR - SWIR1)/(NIR + SWIR1) sometimes called NDMI or NBR2
+      if (is.null(n) || is.null(s1)) stop("NDMI requires 'nir' and 'swir1' bands.")
+      out_layers[["NDMI"]] <- (n - s1) / (n + s1)
+    } else if (idx_upper == "LAI") {
+      # 3.618*EVI - 0.118
+      if (is.null(n) || is.null(r) || is.null(b)) stop("LAI requires 'nir', 'red', and 'blue' bands.")
+      out_layers[["LAI"]] <- (3.618 * (2.5 * (n - r) / (n + 6 * r - 7.5 * b + 1 ))) - 0.118
+    } else {
+      stop("Index '", idx, "' is not implemented. Add it to compute_indices_from_bands() if desired.")
+    }
+  }
+  return(out_layers)
+}  
+```
+
+Compute VI from Landsat composites.
+
+```{r}
+## Main loop to calculate VIs from Landsat composites
+
+indices_list <- c("NDVI","EVI","NDWI","NDMI","SAVI","NBR", "LAI")
+VIndex <- indices_list[4] # 1 = NDVI - 2 = EVI - 3 = NDWI - 4 = NDMI - 5 = SAVI - 6 = NBR - 7 = LAI
+
+composites_folder <- paste0("D:/Documents/QuebecTaigaStudy/Composites/",VIndex, "/Clean")  # output folder
+
+if (dir.exists(composites_folder) == TRUE) {
+  message(paste0("⚠️ Composite folder to store ",VIndex," composites already exists."))
+} else {
+  dir.create(composites_folder, showWarnings = FALSE, recursive = TRUE)
+  message(paste0("✅ Composite folder for ",VIndex," composites successfully created.")) 
+}
+
+# Which indices to compute (any subset of supported indices below)
+indices_to_compute <- c(VIndex)  
+
+# Band mapping: set these to the band numbers of the merged multiband TIFF file
+# e.g. common Landsat ordering in merged files: blue=1, green=2, red=3, nir=4, swir1=5, swir2=6
+band_map <- list(blue = 1, green = 2, red = 3, nir = 4, swir1 = 5, swir2 = 6)
+
+VIs_files <- character(0) # To store NDVI file paths
+
+#merged_files <- list.files(merged_path, pattern = "_merged\\.tif$", full.names = TRUE) #(Already loaded above)
+
+for (file in merged_files) {
+  loop_start <- Sys.time()
+
+  # Extract year from file name
+  yr <- sub(".*_(\\d{4})_merged\\.tif", "\\1", basename(file))
+  message("Processing vegetation index: ",VIndex," for year: ", yr, "  (file: ", basename(file), ")")
+
+  # Load the merged raster (multi-band)
+  year_raster <- rast(file)
+  
+  # extract bands as SpatRaster layers according to band_map
+  # if a requested band index is beyond number of layers, throw error
+  nlyr <- nlyr(year_raster)
+  
+  # helper to get band if exists, otherwise NULL
+  get_band_or_null <- function(bandnum) {
+    if (is.null(bandnum)) return(NULL)
+    if (bandnum <= 0 || bandnum > nlyr) return(NULL)
+    return(year_raster[[bandnum]])
+  }
+  
+  bands <- list(
+    blue  = get_band_or_null(band_map$blue),
+    green = get_band_or_null(band_map$green),
+    red   = get_band_or_null(band_map$red),
+    nir   = get_band_or_null(band_map$nir),
+    swir1 = get_band_or_null(band_map$swir1),
+    swir2 = get_band_or_null(band_map$swir2)
+  )
+  
+  # compute requested indices (this returns a named list of SpatRasters)
+  VI_layers <- compute_indices_from_bands(bands, VIndex)
+  
+  # combine to a single SpatRaster with proper names and order
+  indices <- rast(VI_layers)           # combine list into SpatRaster
+  names(indices) <- names(VI_layers)   # ensure names are kept
+  
+  # Save NDVI raster
+  out_file <- file.path(composites_folder, paste0(VIndex, "_" , yr, ".tif"))
+  writeRaster(indices, filename = out_file, overwrite = TRUE)
+
+  # Store file path for stacking later
+  VIs_files <- c(VIs_files, out_file)
+
+  # Clean up
+  rm(year_raster, VI_layers, bands)
+  terra::tmpFiles(current = TRUE, remove = TRUE)
+  gc()
+
+  loop_end <- Sys.time()
+  message("Time for year ", yr, ": ", round(loop_end - loop_start, 1), " ", units(loop_end - loop_start))
+}
+
+# --- Build VI stack ---
+
+VI_stack <- rast(VIs_files)
+
+# Rename layers by year
+
+VIs_files <- list.files("D:/Documents/QuebecTaigaStudy/Composites/NDVI/ExtraComposites/MaskedComposites", pattern = "\\.tif$", full.names = TRUE, recursive = TRUE)
+
+VIyears <- as.integer(str_extract(basename(VIs_files), "\\d{4}"))
+names(VI_stack) <- paste0(VIndex, "_", rep(years, each = length(VIndex)))
+
+# # Save final stack
+# writeRaster(VI_stack, file.path(composites_folder, "NDMI_timeseries_stack.tif"), overwrite = TRUE)
+# VI_timeseries_stack <- rast(file.path(composites_folder, "NDMI_timeseries_stack.tif"))
+
+```
+
+### Compute spatial early warning signals
+
+Set up and define the Input/Output paths, files and parameters.
+
+```{r}
+## ---- Define Input/Output paths and files ----
+
+# Select vegetation index and resolution to process
+
+VI <- 1  # 1-NDVI, 2-NDMI, 3-SAVI 4- LAI
+RES <- 4 # 1-RES5, 2-RES6, 3-RES7, 4-RES8, 5-RES9
+cores <- 8 # Number of cores to use for parallel processing
+
+# Specify VI composite type (just for file naming convention)
+# For example: "Raw", "Mean", "Median", "Quality" (Max = Quality)
+composite_type <- "Max"
+
+indices <- c("NDVI","NDMI","SAVI", "LAI")
+
+index_name <- indices[VI]    # <<< change per job
+
+composites_folder <- file.path("D:/Documents/QuebecTaigaStudy/Composites",
+                               index_name,"Clean") #, "Clean", TwoYearComposites")
+
+grids_folder <- "D:/Documents/QuebecTaigaStudy/Shapefiles/Grids/DGGRIDS/IGEO7"
+
+grid_files <- list.files(grids_folder, pattern = paste0(".shp"), full.names = TRUE)
+grid_resolutions <- c(5,6,7,8,9)
+resolution <- grid_resolutions[RES]
+
+grid_path <- paste0(grids_folder, "/IGEO7_", resolution, "RES.shp")   # Location of exported GEE composites
+grid <- vect(grid_path) # grid object
+grid$id <- 1:nrow(grid)
+grid_sf <- sf::st_as_sf(grid)
+#plot(grid)
+# plot(grid_sf$geometry, col = "transparent", border = "blue")#, add= TRUE)
+
+# Get scale from grid file name
+scale <- as.numeric(gsub(".*_(\\d+)RES\\.shp$", "\\1", basename(grid_path)))
+
+# Create VI-specfic output folders
+
+out_folder <- "D:/Documents/QuebecTaigaStudy/SpatialAnalysis/IGEO7Results"    # Output folder for results
+out_dir <- file.path(out_folder, index_name, file_path_sans_ext(basename(grid_path)))
+
+if (!dir.exists(out_dir)) dir.create(out_dir, recursive = TRUE)
+
+## Build file list for this index ----
+raster_files <- list.files(
+  composites_folder,
+  pattern = paste0(index_name, "_\\d{4}\\.tif$"), ## Files are either named Composite_YYYY_merged ("_merged\\.tif$",) o INDEX_YYYY (paste0(index_name, "_\\d{4}\\.tif$"))
+  full.names = TRUE
+)
+
+years <- as.integer(str_extract(basename(raster_files), "\\d{4}")) ### For files named Composite_YYYY_merged
+
+cat("Processing", index_name, "rasters at level", scale, "resolution using", cores, "cores")
+```
+
+Functions to calculate the spatial EWS
+
+```{r}
+## Compute sews with NAs ####---
+na_aware_ews <- function(mat, cg_subsize) {
+  require(moments) # required packages
+  require(raster)
+  mat_coarse <- coarse_grain(mat, cg_subsize)
+  c(skewness = skewness(as.vector(mat_coarse), na.rm = TRUE),
+    variance = var(as.vector(mat_coarse), na.rm = TRUE),
+    mean = mean(as.vector(mat_coarse), na.rm = TRUE),
+    moran = Moran(raster(mat_coarse))) #Using the raster package (##This function calculates Queens case. The default setting uses a 3x3 neighborhood to compute "Queen's case" indices.)
+    #moran = queen_moran(mat_coarse)) #Using sdep package (extremely time consuming for pixel level)
+}
+```
+
+Parallel processing plan.
+
+```{r}
+
+## In each job’s plan(multisession, workers = N), choose N ≈ (total_cores / number_of_jobs)
+
+future::plan(multisession, workers = cores)
+# future::plan(sequential)
+
+# Parallel loop: one worker per year
+process_year  <- function(file, year, grid) {
+
+  pid <- Sys.getpid()         # which worker handled this task
+  task_start <- Sys.time()    # start time
+
+  message("Year ", year, " started on worker PID ", pid, " at ", task_start)
+  #loop_start <- Sys.time()
+  #message("Starting processing for layer ", layer_index, " of ", length(raster_files), " at ", Sys.time())
+  #cat("Processing year:", time_seq[layer_index], "\n")
+  #message("Processing year: ", year)
+
+  # Open raster inside worker
+  current_layer <- rast(file) #raster_files[layer_index]
+  indictestresults <- list()
+
+  # Prepare results for this year
+  results <- data.frame(
+    id = grid$id,
+    global_id = grid$global_id,
+    year = year, #time_seq[layer_index]
+    variance = NA_real_,
+    skewness = NA_real_,
+    moran = NA_real_,
+    mean = NA_real_
+  )
+
+  # Loop over tiles (sequential within worker)
+  for (i in 1:nrow(grid)) {
+    current_tile <- grid[grid$id == i, , drop = FALSE]
+    current_tile_vect <- terra::vect(current_tile)
+    current_tile_vect <- terra::project(current_tile_vect, crs(current_layer))
+    clipped_raster <- terra::crop(current_layer, current_tile_vect, mask = TRUE, touches = FALSE)
+    clipped_raster <- raster(clipped_raster)
+    raster_matrix  <- as.matrix(clipped_raster)
+
+    if (all(is.na(raster_matrix))) next
+
+    # --- Compute observed indicators ---
+    indicators <- compute_indicator(raster_matrix, fun = na_aware_ews, cg_subsize = 1)
+
+    indicatorvalues <- indicators$value
+
+    results$variance[i] <- indicatorvalues["variance"]
+    results$skewness[i] <- indicatorvalues["skewness"]
+    results$moran[i]    <- indicatorvalues["moran"]
+    results$mean[i]     <- indicatorvalues["mean"]
+    
+  }
+
+  task_end <- Sys.time()
+  runtime <- as.numeric(difftime(task_end, task_start, units = "secs"))
+
+  message("Year ", year, " finished on worker PID ", pid, " at ", task_end,
+          " (runtime: ", round(runtime, 2), "s)")
+
+  # Add worker + runtime columns for diagnostics
+  #results$worker <- pid
+  #results$runtime <- runtime
+
+  #loop_end <- Sys.time()
+  #message("Finished processing for layer ", layer_index, " at ", Sys.time())
+  #message("Time taken: ", round(loop_end - loop_start, 2), " secs")
+
+  return(results)
+}
+
+## Parallel loop across years ----#
+start_time <- Sys.time()
+
+sews_results <- list()
+
+sews_results <- future_lapply(
+  seq_along(raster_files),
+  function(idx) {
+    process_year(raster_files[idx], years[idx], grid_sf)
+  },
+  future.packages = c(
+    "terra", "raster", "spatialwarnings",
+    "spatialwarningsGis", "sf", "dplyr"
+  )
+)
+
+end_time <- Sys.time()
+
+cat("Finished", index_name, "in",
+    round(difftime(end_time, start_time, units = "mins"), 2),
+    "minutes\n")
+```
+
+```{r}
+
+### ---- 5. Save output ----
+
+sews_results_df <- bind_rows(sews_results)
+
+start_year <- min(years)
+end_year <- max(years)
+
+saveRDS(sews_results_df, file.path(out_dir, paste0("SEWS_IGEO7_", composite_type , index_name, "_" , start_year, "_", end_year, "_Summer0609_", scale , "RES", ".rds")))
+
+write.csv(sews_results_df, file.path(out_dir, paste0("SEWS_IGEO7_", composite_type , index_name, "_" , start_year, "_", end_year, "_Summer0609_", scale, "RES", ".csv")), row.names = FALSE)
+
+```
+
