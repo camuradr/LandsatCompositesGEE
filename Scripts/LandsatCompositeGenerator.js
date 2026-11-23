@@ -6,18 +6,7 @@ var Landsat5 = ee.ImageCollection("LANDSAT/LT05/C02/T1_L2"),
     Landsat7 = ee.ImageCollection("LANDSAT/LE07/C02/T1_L2"),
     Landsat8 = ee.ImageCollection("LANDSAT/LC08/C02/T1_L2"),
     nirVis = {"bands":["SR_B5","SR_B4","SR_B3"],"min":0,"max":0.3},
-    swir1vis = {"bands":["SR_B6","SR_B5","SR_B4"],"min":0,"max":0.3},
     Visible = {"bands":["SR_B4","SR_B3","SR_B2"],"min":0,"max":0.3},
-    BoundingBox = 
-    /* color: #d63000 */
-    /* shown: false */
-    ee.Geometry.Polygon(
-        [[[-79.21901142526966, 49.7711654622023],
-          [-63.35574615642618, 49.7711654622023],
-          [-63.35574615642618, 58.15441425790935],
-          [-79.21901142526966, 58.15441425790935]]]),
-    ShieldTaiga = ee.FeatureCollection("projects/ee-cesaramuradr1n24/assets/IntactForest_Quebec_ShieldTaiga"),
-    provinceIFL = ee.FeatureCollection("projects/turnkey-topic-441614-c0/assets/EasternCanadianShieldTaigaIFL"),
     SampleArea = 
     /* color: #75ff16 */
     /* shown: false */
@@ -26,7 +15,6 @@ var Landsat5 = ee.ImageCollection("LANDSAT/LT05/C02/T1_L2"),
           [-70.54159923775667, 54.95368476234034],
           [-68.35531994088167, 54.95368476234034],
           [-68.35531994088167, 55.98428411757292]]], null, false),
-    IFL_150 = ee.FeatureCollection("projects/ee-leafborealforests/assets/NAM_150_IFL"),
     NAM_IFL = ee.FeatureCollection("projects/ee-cesaramuradr1n24/assets/NAM_IFL"),
     GlobalWater = ee.Image("JRC/GSW1_4/GlobalSurfaceWater");
 
@@ -45,8 +33,8 @@ var N_COMPOSITES = 1;                 // Number of composites
 var POS_START = 6;                    // Peak of Season (POS) start month
 var POS_END = 8;                      // Peak of Season (POS) end month
 var WATER_MASK = false;               // Apply water mask: true = mask water pixels, false = keep them
-var ROI = 'IFL_Q';                    // Select the region of interest (ROI): 'IFL_Q' (Quebec), 'IFL_C' (Custom) or 'Sample'
-var IFL_ID = 'NAM_282_3';             // IFL ID corresponding to the IFL_C of interest
+var ROI = 'IFL';                      // Select the region of interest (ROI): 'IFL' or 'Sample'
+var IFL_ID = 'NAM_282_3';             // ID corresponding to the IFL of interest
 
 //////////////////////////////////////////////////////////////////////////////////////////////////
 //////////////////////////////////// EXPORT CONTROL PANEL ///////////////////////////////////////
@@ -243,12 +231,11 @@ var applyL8cal = calibrationOptions[CALIBRATION].calFn.L8;
 //////////////////////////////////// LOAD LANDSAT COLLECTIONS /////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
-var IFL_C = NAM_IFL.filter(ee.Filter.eq('IFL_ID', IFL_ID));
+var IFL = NAM_IFL.filter(ee.Filter.eq('IFL_ID', IFL_ID));
 
 var roiOptions = {
-  'IFL_Q': provinceIFL.geometry(),  // intact forest landscapes,
-  'IFL_C': IFL_C.geometry(),
-  'Sample': SampleArea              // small polygon for testing
+  'IFL': IFL.geometry(),            // intact forest landscapes
+  'Sample': SampleArea              // polygon for testing
 };
 
 var roi  = roiOptions[ROI];
@@ -490,12 +477,12 @@ var nVis = {min: 0, max: nVisMax, palette: [
 };
 
 var meanN = obsCountsCollection.mean().rename('mean_N_obs');
-Map.addLayer(meanN, {min: 0, max: nVisMax, palette: ['d73027','fee08b','1a9850']}, 'Mean N obs across all composites', false);
+// Map.addLayer(meanN, {min: 0, max: nVisMax, palette: ['d73027','fee08b','1a9850']}, 'Mean N obs across all composites', false);
 
 var list = obsCountsCollection.toList(obsCountsCollection.size());
 for (var i = 0; i < N_COMPOSITES; i++) {
   var img = ee.Image(list.get(i));
-  Map.addLayer(img, nVis, 'N obs ' + (START_YEAR + i * STEP), false);
+  Map.addLayer(img, nVis, 'N_obs ' + (START_YEAR + i * STEP), false);
 }
 
 // var stdN  = obsCountsCollection.reduce(ee.Reducer.stdDev()).rename('std_N');
